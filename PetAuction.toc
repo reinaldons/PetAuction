@@ -1,0 +1,9 @@
+## Interface: 70000
+## Title: Pet Auction
+## Notes: Scan Auction House for pets not owned yet
+## Author: Reinaldo Nolasco Sanches
+## Version: 0.1.0
+## Secure: 1
+## LoadOnDemand: 0
+
+PetAuction.xml

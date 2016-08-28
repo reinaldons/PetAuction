@@ -1,0 +1,11 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/
+..\..\FrameXML\UI.xsd">
+    <Script file="PetAuction.lua"/>
+    <Frame name="PetAuctionFrame" parent="UIParent" enableMouse="true">
+        <Scripts>
+            <OnLoad function="PetAuction_OnLoad"/>
+            <OnShow function="PetAuction_OnShow"/>
+            <OnEvent function="PetAuction_OnEvent"/>
+        </Scripts>
+    </Frame>
+</Ui>
