@@ -13,6 +13,7 @@ local PET_AUCTION_BUTTON_CREATED = false
 
 local active_auction
 local active_button
+local lastQueryPage = 0
 
 -- Initialization
 function PetAuction_OnLoad(self)
@@ -38,14 +39,34 @@ function PetAuction_OnShow()
 end
 
 function PetAuction_Update()
+    local petsFound = {}
+    local itemLink
     local numBatchAuctions, totalAuctions = GetNumAuctionItems("list");
     local name, texture, count, quality, canUse, level, levelColHeader, minBid, minIncrement, buyoutPrice, bidAmount, highBidder, bidderFullName, owner, ownerFullName, saleStatus, itemId, hasAllInfo
 
     PetAuction_Debug("_Update: "..NUM_BROWSE_TO_DISPLAY.." "..NUM_AUCTION_ITEMS_PER_PAGE)
 
-    for i=1, totalAuctions do
+    for i=1, numBatchAuctions do
+        itemLink = GetAuctionItemLink ("list", i)
         name, texture, count, quality, canUse, level, levelColHeader, minBid, minIncrement, buyoutPrice, bidAmount, highBidder, bidderFullName, owner, ownerFullName, saleStatus, itemId, hasAllInfo =  GetAuctionItemInfo("list", i)
+
+        if petsFound[name] == nil then
+            petsFound[name] = {minBid = minBid, buyoutPrice = buyoutPrice }
+        else
+            if buyoutPrice < petsFound[name].buyoutPrice then
+                petsFound[name] = {minBid = minBid, buyoutPrice = buyoutPrice }
+            end
+        end
+
+        if NUM_AUCTION_ITEMS_PER_PAGE * lastQueryPage <= totalAuctions then
+            -- PROCESS QUERY RESULT AND QUEUE A NEW SEARCH FOR NEXT PAGE
+        end
     end
+
+    for k, v in pairs(petsFound) do
+        PetAuction_Debug(" k: "..k.." minBid: "..v.minBid.." buyoutPrice: "..v.buyoutPrice)
+    end
+
 end
 
 function PetAuction_AddTab(tabText)
@@ -114,73 +135,74 @@ function PetAuction_AuctionFrameTab_OnClick(button)
     PetAuctionBuyout:Show()
     PetAuctionShow:Show()
 
-    PetAuction_QueryPetList()
     --PetAuction_UpdatePetList()
 end
 
 function PetAuction_CreateFrame()
     if PetAuctionScan == nil then
-        CreateFrame ("Button", "PetAuctionScan", AuctionFrame, "UIPanelButtonTemplate")
-        PetAuctionScan:SetPoint ("TOPLEFT", 100, -45)
-        PetAuctionScan:SetWidth (150)
-        PetAuctionScan:SetText ("Scan Action House")
-        PetAuctionScan:SetScript ("OnClick", function ()
-            self:RegisterEvent ("AUCTION_ITEM_LIST_UPDATE")
-            QueryAuctionItems ("", 0, 0, 0, 11, 0, 0, 0, 0, 0)
+        CreateFrame("Button", "PetAuctionScan", AuctionFrame, "UIPanelButtonTemplate")
+        PetAuctionScan:SetPoint("TOPLEFT", 100, -45)
+        PetAuctionScan:SetWidth(150)
+        PetAuctionScan:SetText("Scan Action House")
+        PetAuctionScan:SetScript("OnClick", function ()
+            PetAuction_QueryPetList()
         end)
     end
 
     if PetAuctionStatus == nil then
-        AuctionFrame:CreateFontString ("PetAuctionStatus", "ARTWORK", "ChatFontNormal")
-        PetAuctionStatus:SetPoint ("TOP", 0, -47)
+        AuctionFrame:CreateFontString("PetAuctionStatus", "ARTWORK", "ChatFontNormal")
+        PetAuctionStatus:SetPoint("TOP", 0, -47)
     end
 
     if PetAuctionScroll == nil then
-        CreateFrame ("ScrollFrame", "PetAuctionScroll", AuctionFrame, "UIPanelScrollFrameTemplate")
-        CreateFrame ("Frame", "PetAuctionScrollChild")
+        CreateFrame("ScrollFrame", "PetAuctionScroll", AuctionFrame, "UIPanelScrollFrameTemplate")
+        CreateFrame("Frame", "PetAuctionScrollChild")
 
-        PetAuctionScroll:SetScrollChild (PetAuctionScrollChild)
-        PetAuctionScroll:SetPoint ("TOPLEFT", 20, -80)
-        PetAuctionScroll:SetPoint ("BOTTOMRIGHT", -38, 45)
-        PetAuctionScrollChild:SetWidth (PetAuctionScroll:GetWidth ())
+        PetAuctionScroll:SetScrollChild(PetAuctionScrollChild)
+        PetAuctionScroll:SetPoint("TOPLEFT", 20, -80)
+        PetAuctionScroll:SetPoint("BOTTOMRIGHT", -38, 45)
+        PetAuctionScroll:SetScript("OnVerticalScroll", function ()
+            AuctionFrameFilters_Update()
+        end)
+        PetAuctionScrollChild:SetWidth(PetAuctionScroll:GetWidth())
     end
 
     if PetAuctionBid == nil then
-        CreateFrame ("Button", "PetAuctionBid", AuctionFrame, "UIPanelButtonTemplate")
-        PetAuctionBid:SetPoint ("BOTTOMRIGHT", -168, 14)
-        PetAuctionBid:SetSize (80, 22)
-        PetAuctionBid:SetText ("Bid")
-        PetAuctionBid:SetScript ("OnClick", function ()
-            self:ShowConfirmDialog ("BID")
+        CreateFrame("Button", "PetAuctionBid", AuctionFrame, "UIPanelButtonTemplate")
+        PetAuctionBid:SetPoint("BOTTOMRIGHT", -168, 14)
+        PetAuctionBid:SetSize(80, 22)
+        PetAuctionBid:SetText("Bid")
+        PetAuctionBid:SetScript("OnClick", function ()
+            self:ShowConfirmDialog("BID")
         end)
-        PetAuctionBid:Disable ()
+        PetAuctionBid:Disable()
     end
 
     if PetAuctionBuyout == nil then
         CreateFrame ("Button", "PetAuctionBuyout", AuctionFrame, "UIPanelButtonTemplate")
-        PetAuctionBuyout:SetPoint ("BOTTOMRIGHT", -88, 14)
-        PetAuctionBuyout:SetSize (80, 22)
-        PetAuctionBuyout:SetText ("Buyout")
-        PetAuctionBuyout:SetScript ("OnClick", function ()
-            self:ShowConfirmDialog ("BUYOUT")
+        PetAuctionBuyout:SetPoint("BOTTOMRIGHT", -88, 14)
+        PetAuctionBuyout:SetSize(80, 22)
+        PetAuctionBuyout:SetText("Buyout")
+        PetAuctionBuyout:SetScript("OnClick", function ()
+            self:ShowConfirmDialog("BUYOUT")
         end)
         PetAuctionBuyout:Disable ()
     end
 
     if PetAuctionShow == nil then
-        CreateFrame ("Button", "PetAuctionShow", AuctionFrame, "UIPanelButtonTemplate")
-        PetAuctionShow:SetPoint ("BOTTOMRIGHT", -8, 14)
-        PetAuctionShow:SetSize (80, 22)
-        PetAuctionShow:SetText ("Show")
-        PetAuctionShow:SetScript ("OnClick", function ()
-            SortAuctionClearSort ("list")
-            SortAuctionSetSort ("list", "buyout")
-            SortAuctionApplySort ("list")
-            QueryAuctionItems (active_auction["name"])
+        CreateFrame("Button", "PetAuctionShow", AuctionFrame, "UIPanelButtonTemplate")
+        PetAuctionShow:SetPoint("BOTTOMRIGHT", -8, 14)
+        PetAuctionShow:SetSize(80, 22)
+        PetAuctionShow:SetText("Show")
+        PetAuctionShow:SetScript("OnClick", function ()
+            SortAuctionClearSort("list")
+            SortAuctionSetSort("list", "buyout")
+            SortAuctionApplySort("list")
+            QueryAuctionItems(active_auction["name"])
 
-            self:HideUi ()
-            PlaySound ("igCharacterInfoTab")
-            PanelTemplates_SetTab (AuctionFrame, 1)
+            self:HideUi()
+            PlaySound("igCharacterInfoTab")
+            PanelTemplates_SetTab(AuctionFrame, 1)
             AuctionFrameTopLeft:SetTexture("Interface\\AuctionFrame\\UI-AuctionFrame-Browse-TopLeft");
             AuctionFrameTop:SetTexture("Interface\\AuctionFrame\\UI-AuctionFrame-Browse-Top");
             AuctionFrameTopRight:SetTexture("Interface\\AuctionFrame\\UI-AuctionFrame-Browse-TopRight");
@@ -191,7 +213,7 @@ function PetAuction_CreateFrame()
             AuctionFrame.type = "list";
             SetAuctionsTabShowing(false);
         end)
-        PetAuctionShow:Disable ()
+        PetAuctionShow:Disable()
     end
 end
 
@@ -320,10 +342,12 @@ function PetAuction_UpdatePetList()
 end
 
 function PetAuction_QueryPetList()
+    local filterData = {}
     PetAuction_Debug("Item Class: "..PetAuction_Yellow(AUCTION_CATEGORY_BATTLE_PETS).." "..LE_ITEM_CLASS_BATTLEPET)
 
+    filterData[1] = { classID = LE_ITEM_CLASS_BATTLEPET, subClassID = GetAuctionItemSubClasses(LE_ITEM_CLASS_BATTLEPET), inventoryType = nil, }
     --QueryAuctionItems("name", minLevel, maxLevel, page, isUsable, qualityIndex, getAll, exactMatch, filterData)
-    QueryAuctionItems("", 0, 0, 0, 0, 0, true, nil, LE_ITEM_CLASS_BATTLEPET);
+    QueryAuctionItems("", 0, 0, 0, 0, 0, false, nil, filterData);
 end
 
 -- Utils
