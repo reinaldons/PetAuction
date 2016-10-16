@@ -11,17 +11,23 @@ local PET_AUCTION_DEBUG = true
 local PET_AUCTION_TAB_INDEX
 local PET_AUCTION_BUTTON_CREATED = false
 
+local LIST_SIZE = 10
+
 local active_auction
 local active_button
 local lastQueryPage = 0
+local userPets = { }
+local petsFound = {}
+local petFoundId = 1
 
 -- Initialization
 function PetAuction_OnLoad(self)
     PetAuction_Debug("_OnLoad")
 
     self:RegisterEvent("AUCTION_HOUSE_SHOW");
-    self:RegisterEvent("AUCTION_ITEM_LIST_UPDATE");
     self:RegisterEvent("AUCTION_HOUSE_CLOSED");
+    -- TODO: Disable or check AUCTION_ITEM_LIST_UPDATE event after search is finished
+    self:RegisterEvent("AUCTION_ITEM_LIST_UPDATE");
 end
 
 function PetAuction_OnEvent(self, event, ...)
@@ -39,34 +45,44 @@ function PetAuction_OnShow()
 end
 
 function PetAuction_Update()
-    local petsFound = {}
-    local itemLink
+    local listCount = 1
+    local sortedPets = {}
     local numBatchAuctions, totalAuctions = GetNumAuctionItems("list");
-    local name, texture, count, quality, canUse, level, levelColHeader, minBid, minIncrement, buyoutPrice, bidAmount, highBidder, bidderFullName, owner, ownerFullName, saleStatus, itemId, hasAllInfo
+    local name, texture, count, quality, canUse, level, levelColHeader, minBid, minIncrement, buyoutPrice, bidAmount
+    local highBidder, bidderFullName, owner, ownerFullName, saleStatus, itemId, hasAllInfo, itemLink
 
-    PetAuction_Debug("_Update: "..NUM_BROWSE_TO_DISPLAY.." "..NUM_AUCTION_ITEMS_PER_PAGE)
+    PetAuction_Debug("_Update display: "..NUM_BROWSE_TO_DISPLAY.." item/p: "..NUM_AUCTION_ITEMS_PER_PAGE)
+    PetAuction_Debug("_Update batchNum: "..numBatchAuctions.." total: "..totalAuctions)
 
     for i=1, numBatchAuctions do
-        itemLink = GetAuctionItemLink ("list", i)
+        itemLink = GetAuctionItemLink("list", i)
         name, texture, count, quality, canUse, level, levelColHeader, minBid, minIncrement, buyoutPrice, bidAmount, highBidder, bidderFullName, owner, ownerFullName, saleStatus, itemId, hasAllInfo =  GetAuctionItemInfo("list", i)
 
         if petsFound[name] == nil then
-            petsFound[name] = {minBid = minBid, buyoutPrice = buyoutPrice }
+            petsFound[name] = {name = name, icon = texture, link = itemLink, minBid = minBid, buyoutPrice = buyoutPrice }
         else
             if buyoutPrice < petsFound[name].buyoutPrice then
-                petsFound[name] = {minBid = minBid, buyoutPrice = buyoutPrice }
+                petsFound[name].minBid = minBid
+                petsFound[name].buyoutPrice = buyoutPrice
             end
         end
+    end
 
-        if NUM_AUCTION_ITEMS_PER_PAGE * lastQueryPage <= totalAuctions then
-            -- PROCESS QUERY RESULT AND QUEUE A NEW SEARCH FOR NEXT PAGE
+    if NUM_AUCTION_ITEMS_PER_PAGE * lastQueryPage <= totalAuctions then
+        lastQueryPage = lastQueryPage + 1
+        PetAuction_QueryPetList()
+    else
+        -- TODO: Filter pets already owned by player (userPets)
+        for _, petFound in pairs(petsFound) do
+            sortedPets[listCount] = petFound
+            listCount = listCount + 1
         end
+        -- TODO: Sort list by buyoutPrice
+        table.sort(petsFound, function(a, b) return a.buyoutPrice < b.buyoutPrice end)
+        -- TODO: If list is already created, just update the size
+        PetAuction_CreateEntries(listCount - 1)
+        PetAuction_UpdateEntries(sortedPets)
     end
-
-    for k, v in pairs(petsFound) do
-        PetAuction_Debug(" k: "..k.." minBid: "..v.minBid.." buyoutPrice: "..v.buyoutPrice)
-    end
-
 end
 
 function PetAuction_AddTab(tabText)
@@ -135,7 +151,7 @@ function PetAuction_AuctionFrameTab_OnClick(button)
     PetAuctionBuyout:Show()
     PetAuctionShow:Show()
 
-    --PetAuction_UpdatePetList()
+    PetAuction_UpdatePetList()
 end
 
 function PetAuction_CreateFrame()
@@ -217,47 +233,43 @@ function PetAuction_CreateFrame()
     end
 end
 
-function PetAuction_CreateEntries(pets)
-    PetAuction_Debug(PetAuction_Yellow("Num of Entries "..table.getn(pets)))
+function PetAuction_CreateEntries(num)
+    PetAuction_Debug(PetAuction_Yellow("Num of Entries "..num))
 
-    for _, child in pairs({PetAuctionScrollChild:GetChildren()}) do
-        child:Hide()
+    for i = 1, num do
+        PetAuction_CreateEntry(i)
     end
 
-    for i, pet in ipairs(pets) do
-        PetAuction_CreateEntry(i, pet)
-    end
-
-    PetAuctionScrollChild:SetHeight(#pets*37)
-    PetAuctionStatus:SetText(#pets.." items found")
+    PetAuctionScrollChild:SetHeight(num*37)
+    PetAuctionStatus:SetText(num.." items found")
 end
 
-function PetAuction_CreateEntry(index, pet)
+function PetAuction_CreateEntry(index)
     local buttonName = "PetAuctiontEntry"..index
     local click, highlight, pushed, link, icon, text
 
     if _G[buttonName] == nil then
         local entry = CreateFrame ("CheckButton", buttonName, PetAuctionScrollChild)
-        entry:SetPoint ("LEFT", 0, 0)
-        entry:SetPoint ("RIGHT", 0, 0)
+        entry:SetPoint("LEFT", 0, 0)
+        entry:SetPoint("RIGHT", 0, 0)
         if index > 1 then
-            entry:SetPoint ("TOP", "PetAuctiontEntry"..(index - 1), "BOTTOM", 0, -2)
+            entry:SetPoint("TOP", "PetAuctiontEntry"..(index - 1), "BOTTOM", 0, -2)
         else
-            entry:SetPoint ("TOP", 0, 0)
+            entry:SetPoint("TOP", 0, 0)
         end
-        entry:SetHeight (35)
-        click = function (self)
-            entry:SetChecked (true)
-            active_auction = pet
+        entry:SetHeight(35)
+        click = function(self)
+            entry:SetChecked(true)
+            active_auction = nil
             if active_button ~= nil then
-                active_button:SetChecked (false)
+                active_button:SetChecked(false)
             end
             active_button = entry
-            PetMarketBuyout:Enable ()
-            PetMarketBid:Enable ()
-            PetMarketShow:Enable ()
+            PetAuctionBuyout:Enable()
+            PetAuctionBid:Enable()
+            PetAuctionShow:Enable()
         end
-        entry:SetScript ("OnClick", click)
+        entry:SetScript("OnClick", click)
 
         highlight = entry:CreateTexture()
         highlight:SetTexture("Interface\\HelpFrame\\HelpFrameButton-Highlight")
@@ -272,54 +284,69 @@ function PetAuction_CreateEntry(index, pet)
         entry:SetCheckedTexture(pushed)
 
         link = CreateFrame("Button", buttonName.."Link", entry)
-        link:SetScript ("OnClick", click)
+        link:SetScript("OnClick", click)
 
         icon = link:CreateTexture(buttonName.."Icon")
-        icon:SetPoint ("TOPLEFT", 0, 0)
-        icon:SetPoint ("BOTTOM", 0, 0)
-        icon:SetWidth (entry:GetHeight ())
+        icon:SetPoint("TOPLEFT", 0, 0)
+        icon:SetPoint("BOTTOM", 0, 0)
+        icon:SetWidth(entry:GetHeight ())
 
         text = link:CreateFontString (buttonName.."Text", "ARTWORK", "ChatFontNormal")
-        text:SetPoint ("LEFT", icon, "RIGHT", 10, 0)
+        text:SetPoint("LEFT", icon, "RIGHT", 10, 0)
 
-        link:SetPoint ("TOPLEFT", 0, 0)
-        link:SetPoint ("BOTTOM", 0, 0)
-        link:SetScript ("OnLeave", function ()
+        link:SetPoint("TOPLEFT", 0, 0)
+        link:SetPoint("BOTTOM", 0, 0)
+        link:SetScript("OnLeave", function ()
             entry:UnlockHighlight ()
             GameTooltip:Hide ()
             BattlePetTooltip:Hide ()
         end)
 
-        local bid = CreateFrame ("Frame", buttonName.."Bid", entry, "SmallMoneyFrameTemplate")
-        MoneyFrame_SetType (bid, "AUCTION")
-        bid:SetPoint ("TOPRIGHT", 0, -5)
+        local bid = CreateFrame("Frame", buttonName.."Bid", entry, "SmallMoneyFrameTemplate")
+        MoneyFrame_SetType(bid, "AUCTION")
+        bid:SetPoint("TOPRIGHT", 0, -5)
 
-        local buyout = CreateFrame ("Frame", buttonName.."Buyout", entry, "SmallMoneyFrameTemplate")
-        MoneyFrame_SetType (buyout, "AUCTION")
-        buyout:SetPoint ("TOP", bid, "BOTTOM", 0, -2)
+        local buyout = CreateFrame("Frame", buttonName.."Buyout", entry, "SmallMoneyFrameTemplate")
+        MoneyFrame_SetType(buyout, "AUCTION")
+        buyout:SetPoint("TOP", bid, "BOTTOM", 0, -2)
 
-        local label = entry:CreateFontString (nil, "OVERLAY", "GameFontNormal")
-        label:SetText ("Buyout")
-        label:SetPoint ("BOTTOMRIGHT", -150, 5)
+        local label = entry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        label:SetText("Buyout")
+        label:SetPoint("BOTTOMRIGHT", -150, 5)
+
+        entry:Show()
+
+        --PetAuction_Debug("buttonName: "..buttonName.." ")
     end
+end
 
-    _G[buttonName.."Icon"]:SetTexture(pet["icon"])
-    --_G[buttonName.."Text"]:SetText(pet["link"]:gsub("[%[%]]", ""))
-    _G[buttonName.."Text"]:SetText(pet["name"])
+function PetAuction_UpdateEntries(pets)
+    for i, pet in ipairs(pets) do
+        PetAuction_UpdateEntry(i, pet)
+    end
+end
+
+function PetAuction_UpdateEntry(index, pet)
+    local buttonName = "PetAuctiontEntry"..index
+
+    PetAuction_Debug("buttonName: "..buttonName.." pet: "..pet.name)
+
+    _G[buttonName.."Icon"]:SetTexture(pet.icon)
+    _G[buttonName.."Text"]:SetText(pet.name)
     _G[buttonName.."Link"]:SetWidth(_G[buttonName.."Text"]:GetWidth () + _G[buttonName.."Icon"]:GetWidth ())
-    _G[buttonName.."Link"]:SetScript ("OnEnter", function()
-        _G[buttonName]:LockHighlight ()
-        GameTooltip:Show ()
-        GameTooltip:SetOwner (_G[buttonName.."Link"])
-        if string.match (value["link"], "|Hbattlepet:") then
-            local _, speciesID, level, breedQuality, maxHealth, power, speed, battlePetID = strsplit(":", pet["link"])
+    _G[buttonName.."Link"]:SetScript("OnEnter", function()
+        _G[buttonName]:LockHighlight()
+        GameTooltip:Show()
+        GameTooltip:SetOwner(_G[buttonName.."Link"])
+        if string.match(pet.link, "|Hbattlepet:") then
+            local _, speciesID, level, breedQuality, maxHealth, power, speed, battlePetID = strsplit(":", pet.link)
             BattlePetToolTip_Show(tonumber(speciesID), tonumber(level), tonumber(breedQuality), tonumber(maxHealth), tonumber(power), tonumber(speed), nil)
         else
-            GameTooltip:SetHyperlink(pet["link"])
+            GameTooltip:SetHyperlink(pet.link)
         end
     end)
-    MoneyFrame_Update(_G[buttonName.."Bid"], pet["bid"])
-    MoneyFrame_Update(_G[buttonName.."Buyout"], pet["buyout"])
+    MoneyFrame_Update(_G[buttonName.."Bid"], pet.minBid)
+    MoneyFrame_Update(_G[buttonName.."Buyout"], pet.buyoutPrice)
     _G[buttonName]:Show()
 end
 
@@ -338,16 +365,26 @@ function PetAuction_UpdatePetList()
     end
 
     PetAuction_Debug("Pet Count: "..table.getn(pets))
-    PetAuction_CreateEntries(pets)
+    userPets = pets
 end
 
 function PetAuction_QueryPetList()
+    local minLevel, maxLevel, isUsable, qualityIndex, exactMatch
+    local getAll = false
     local filterData = {}
+
+    if not CanSendAuctionQuery("list") then
+        PetAuction_Debug("Waiting for search... page: "..lastQueryPage)
+        C_Timer.After(1, function()
+            PetAuction_QueryPetList()
+        end)
+        return
+    end
+
     PetAuction_Debug("Item Class: "..PetAuction_Yellow(AUCTION_CATEGORY_BATTLE_PETS).." "..LE_ITEM_CLASS_BATTLEPET)
 
-    filterData[1] = { classID = LE_ITEM_CLASS_BATTLEPET, subClassID = GetAuctionItemSubClasses(LE_ITEM_CLASS_BATTLEPET), inventoryType = nil, }
-    --QueryAuctionItems("name", minLevel, maxLevel, page, isUsable, qualityIndex, getAll, exactMatch, filterData)
-    QueryAuctionItems("", 0, 0, 0, 0, 0, false, nil, filterData);
+    filterData[1] = { classID = LE_ITEM_CLASS_BATTLEPET, subClassID = GetAuctionItemSubClasses(LE_ITEM_CLASS_BATTLEPET) }
+    QueryAuctionItems("", minLevel, maxLevel, lastQueryPage, isUsable, qualityIndex, getAll, exactMatch, filterData)
 end
 
 -- Utils
