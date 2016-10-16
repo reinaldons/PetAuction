@@ -45,7 +45,6 @@ function PetAuction_OnShow()
 end
 
 function PetAuction_Update()
-    local listCount = 1
     local sortedPets = {}
     local numBatchAuctions, totalAuctions = GetNumAuctionItems("list");
     local name, texture, count, quality, canUse, level, levelColHeader, minBid, minIncrement, buyoutPrice, bidAmount
@@ -74,13 +73,13 @@ function PetAuction_Update()
     else
         -- TODO: Filter pets already owned by player (userPets)
         for _, petFound in pairs(petsFound) do
-            sortedPets[listCount] = petFound
-            listCount = listCount + 1
+            table.insert(sortedPets, petFound)
+            PetAuction_Debug("pet: "..petFound.name.." buyout: "..petFound.buyoutPrice)
         end
         -- TODO: Sort list by buyoutPrice
         table.sort(petsFound, function(a, b) return a.buyoutPrice < b.buyoutPrice end)
         -- TODO: If list is already created, just update the size
-        PetAuction_CreateEntries(listCount - 1)
+        PetAuction_CreateEntries(#sortedPets)
         PetAuction_UpdateEntries(sortedPets)
     end
 end
@@ -383,7 +382,7 @@ function PetAuction_QueryPetList()
 
     PetAuction_Debug("Item Class: "..PetAuction_Yellow(AUCTION_CATEGORY_BATTLE_PETS).." "..LE_ITEM_CLASS_BATTLEPET)
 
-    filterData[1] = { classID = LE_ITEM_CLASS_BATTLEPET, subClassID = GetAuctionItemSubClasses(LE_ITEM_CLASS_BATTLEPET) }
+    filterData[1] = { classID = LE_ITEM_CLASS_BATTLEPET }
     QueryAuctionItems("", minLevel, maxLevel, lastQueryPage, isUsable, qualityIndex, getAll, exactMatch, filterData)
 end
 
